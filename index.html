@@ -94,19 +94,19 @@
         <h1 class="page-title">My CV</h1>
         <p class="page-desc">This base CV is used by AI to create tailored versions for each job.</p>
 
-        <div class="upload-zone" id="cv-upload-zone" onclick="document.getElementById('cv-file-input').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:1rem;">
+          <button class="btn-primary" onclick="document.getElementById('cv-file-input').click()">
+            ⬆ Upload Word document (.docx)
+          </button>
           <input type="file" id="cv-file-input" accept=".docx" style="display:none" onchange="handleFileSelect(event)" />
-          <div class="upload-icon">⬆</div>
-          <div class="upload-label">Upload Word document (.docx)</div>
-          <div class="upload-sub">Drag & drop or click to browse</div>
+          <span id="cv-upload-status" class="save-msg"></span>
         </div>
-        <div id="cv-upload-status" class="cv-upload-status hidden"></div>
 
         <div class="cv-divider"><span>or paste manually</span></div>
 
         <div class="field">
           <label>CV content</label>
-          <textarea id="cv-input" rows="16" placeholder="Paste your full CV here — work experience, education, skills, achievements..."></textarea>
+          <textarea id="cv-input" rows="18" placeholder="Paste your full CV here — work experience, education, skills, achievements..."></textarea>
         </div>
         <div class="field-row">
           <button class="btn-primary" onclick="saveCV()">Save CV</button>
@@ -265,7 +265,7 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>

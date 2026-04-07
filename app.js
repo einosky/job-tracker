@@ -145,48 +145,43 @@ document.querySelectorAll('.nav-item').forEach(btn => {
 });
 
 // ── CV Upload (.docx) ────────────────────────────────────────
-function handleDragOver(e) {
-  e.preventDefault();
-  document.getElementById('cv-upload-zone').classList.add('drag-over');
-}
-function handleDragLeave(e) {
-  document.getElementById('cv-upload-zone').classList.remove('drag-over');
-}
-function handleDrop(e) {
-  e.preventDefault();
-  document.getElementById('cv-upload-zone').classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file) processDocxFile(file);
-}
 function handleFileSelect(e) {
   const file = e.target.files[0];
   if (file) processDocxFile(file);
+  // Reset input so the same file can be re-selected if needed
+  e.target.value = '';
 }
 
-function showUploadStatus(msg, type = 'success') {
+function showUploadStatus(msg, isError = false) {
   const el = document.getElementById('cv-upload-status');
   el.textContent = msg;
-  el.className = `cv-upload-status ${type}`;
-  el.classList.remove('hidden');
-  if (type === 'success') setTimeout(() => el.classList.add('hidden'), 4000);
+  el.style.color = isError ? 'var(--red)' : 'var(--green)';
+  if (!isError) setTimeout(() => el.textContent = '', 5000);
 }
 
 async function processDocxFile(file) {
-  if (!file.name.endsWith('.docx')) {
-    showUploadStatus('Please upload a .docx (Word) file', 'error'); return;
+  if (!file.name.toLowerCase().endsWith('.docx')) {
+    showUploadStatus('Please select a .docx Word file', true); return;
   }
-  showUploadStatus('Reading document…', 'loading');
+  showUploadStatus('Reading document…');
   try {
+    if (typeof mammoth === 'undefined') {
+      showUploadStatus('Library not loaded yet — please wait a moment and try again', true);
+      return;
+    }
     const arrayBuffer = await file.arrayBuffer();
     const result = await mammoth.extractRawText({ arrayBuffer });
-    const text = result.value.trim();
-    if (!text) { showUploadStatus('Could not extract text from this file', 'error'); return; }
+    const text = (result.value || '').trim();
+    if (!text) {
+      showUploadStatus('No text found in document — try pasting manually', true); return;
+    }
     document.getElementById('cv-input').value = text;
     cv = text;
     localStorage.setItem('apply_cv', cv);
-    showUploadStatus(`CV uploaded and saved from "${file.name}" ✓`);
+    showUploadStatus(`✓ CV loaded from "${file.name}" — click Save CV to confirm`);
   } catch (err) {
-    showUploadStatus('Failed to read file — make sure it is a valid .docx', 'error');
+    console.error('Docx error:', err);
+    showUploadStatus('Failed to read file — make sure it is a valid .docx', true);
   }
 }
 
