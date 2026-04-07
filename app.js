@@ -187,7 +187,15 @@ async function processDocxFile(file) {
     const bufferForHtml = arrayBuffer.slice(0);
     const bufferForText = arrayBuffer.slice(0);
 
-    const htmlResult = await mammoth.convertToHtml({ arrayBuffer: bufferForHtml });
+    const htmlResult = await mammoth.convertToHtml({ arrayBuffer: bufferForHtml }, {
+      styleMap: [
+        "p[style-name='Heading 1'] => h2:fresh",
+        "p[style-name='Heading 2'] => h3:fresh",
+        "p[style-name='Heading 3'] => h4:fresh",
+        "b => strong",
+        "i => em",
+      ]
+    });
     const textResult = await mammoth.extractRawText({ arrayBuffer: bufferForText });
 
     const html = (htmlResult.value || '').trim();
