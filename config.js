@@ -1,6 +1,7 @@
 // ============================================================
 //  APPLY — Configuration
-//  Fill in your keys below, then save.
+//  No API keys here — they are entered in the app settings
+//  and stored securely in your browser only.
 // ============================================================
 
 const CONFIG = {
