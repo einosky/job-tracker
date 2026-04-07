@@ -93,9 +93,20 @@
       <section class="tab-content" id="tab-cv">
         <h1 class="page-title">My CV</h1>
         <p class="page-desc">This base CV is used by AI to create tailored versions for each job.</p>
+
+        <div class="upload-zone" id="cv-upload-zone" onclick="document.getElementById('cv-file-input').click()" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+          <input type="file" id="cv-file-input" accept=".docx" style="display:none" onchange="handleFileSelect(event)" />
+          <div class="upload-icon">⬆</div>
+          <div class="upload-label">Upload Word document (.docx)</div>
+          <div class="upload-sub">Drag & drop or click to browse</div>
+        </div>
+        <div id="cv-upload-status" class="cv-upload-status hidden"></div>
+
+        <div class="cv-divider"><span>or paste manually</span></div>
+
         <div class="field">
           <label>CV content</label>
-          <textarea id="cv-input" rows="22" placeholder="Paste your full CV here — work experience, education, skills, achievements..."></textarea>
+          <textarea id="cv-input" rows="16" placeholder="Paste your full CV here — work experience, education, skills, achievements..."></textarea>
         </div>
         <div class="field-row">
           <button class="btn-primary" onclick="saveCV()">Save CV</button>
@@ -160,6 +171,19 @@
       <!-- ADD JOB -->
       <section class="tab-content" id="tab-add">
         <h1 class="page-title">Add job</h1>
+
+        <div class="settings-card" style="margin-bottom:1.5rem;">
+          <div class="settings-card-title">Import from job listing URL</div>
+          <div class="settings-card-desc" style="margin-bottom:1rem;">Paste a link to the job posting and we'll extract the details automatically.</div>
+          <div style="display:flex; gap:8px;">
+            <input type="url" id="job-fetch-url" placeholder="https://www.seek.co.nz/job/..." style="flex:1;" />
+            <button class="btn-primary" onclick="fetchJobFromUrl()" id="fetch-btn">Import</button>
+          </div>
+          <div id="fetch-status" class="cv-upload-status hidden" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="cv-divider"><span>or fill in manually</span></div>
+
         <div class="form-grid">
           <div class="field">
             <label>Job title</label>
@@ -186,7 +210,7 @@
         </div>
         <div class="field">
           <label>Job description</label>
-          <textarea id="job-desc" rows="12" placeholder="Paste the full job description — the more detail, the better the AI tailoring..."></textarea>
+          <textarea id="job-desc" rows="10" placeholder="Paste the full job description — the more detail, the better the AI tailoring..."></textarea>
         </div>
         <div class="field-row">
           <button class="btn-primary" onclick="addJob()">Add job</button>
@@ -241,6 +265,7 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
