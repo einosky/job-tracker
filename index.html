@@ -15,11 +15,34 @@
     <div class="auth-card">
       <div class="auth-logo">Apply</div>
       <p class="auth-sub">Your intelligent job application tracker</p>
+      <div id="auth-missing-keys" class="auth-warning hidden">
+        ⚠ Please enter your API keys in Settings before signing in.
+      </div>
       <button id="sign-in-btn" class="btn-google">
         <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
         Sign in with Google
       </button>
       <p class="auth-note">Connects to your Google Drive to save tailored CVs and cover letters</p>
+      <button class="auth-settings-link" onclick="showSettingsFromAuth()">⚙ Set up API keys first</button>
+    </div>
+
+    <!-- Settings panel shown before login -->
+    <div id="auth-settings-panel" class="auth-settings-panel hidden">
+      <div class="auth-settings-inner">
+        <button class="auth-back-btn" onclick="hideSettingsFromAuth()">← Back to sign in</button>
+        <div class="auth-logo" style="margin-bottom:0.5rem;">Settings</div>
+        <p class="auth-sub">Enter your keys — stored in this browser only, never on GitHub.</p>
+        <div class="field">
+          <label>Anthropic API key</label>
+          <input type="password" id="pre-anthropic-key" placeholder="sk-ant-..." autocomplete="off" />
+        </div>
+        <div class="field">
+          <label>Google OAuth Client ID</label>
+          <input type="text" id="pre-google-id" placeholder="xxxxxxxxxx.apps.googleusercontent.com" autocomplete="off" />
+        </div>
+        <button class="btn-primary" style="width:100%;" onclick="savePreAuthSettings()">Save & continue</button>
+        <span id="pre-save-msg" class="save-msg" style="display:block;text-align:center;margin-top:8px;"></span>
+      </div>
     </div>
   </div>
 
@@ -38,6 +61,9 @@
         </button>
         <button class="nav-item" data-tab="add">
           <span class="nav-icon">⊕</span> Add job
+        </button>
+        <button class="nav-item" data-tab="settings">
+          <span class="nav-icon">⚙</span> Settings
         </button>
       </nav>
       <div class="sidebar-footer">
@@ -93,6 +119,42 @@
           </div>
         </div>
         <div id="jobs-list"></div>
+      </section>
+
+      <!-- SETTINGS -->
+      <section class="tab-content" id="tab-settings">
+        <h1 class="page-title">Settings</h1>
+        <p class="page-desc">Your API keys are stored only in this browser — they are never uploaded to GitHub or anywhere else.</p>
+
+        <div class="settings-card">
+          <div class="settings-card-title">Anthropic API key</div>
+          <div class="settings-card-desc">Used to tailor your CV and generate cover letters. Get yours at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></div>
+          <div class="field" style="margin-top:1rem;">
+            <input type="password" id="settings-anthropic-key" placeholder="sk-ant-..." autocomplete="off" />
+          </div>
+          <div class="field-row">
+            <button class="btn-primary" onclick="saveSettings()">Save key</button>
+            <span id="settings-anthropic-status" class="save-msg"></span>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="settings-card-title">Google OAuth Client ID</div>
+          <div class="settings-card-desc">Used to sign in with Google and save files to your Drive. Get yours from <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a></div>
+          <div class="field" style="margin-top:1rem;">
+            <input type="text" id="settings-google-id" placeholder="xxxxxxxxxx.apps.googleusercontent.com" autocomplete="off" />
+          </div>
+          <div class="field-row">
+            <button class="btn-primary" onclick="saveSettings()">Save key</button>
+            <span id="settings-google-status" class="save-msg"></span>
+          </div>
+          <p class="settings-note">After saving your Google Client ID, refresh the page for it to take effect.</p>
+        </div>
+
+        <div class="settings-card settings-card-safe">
+          <div class="settings-card-title">🔒 Your keys are safe</div>
+          <div class="settings-card-desc">Keys are saved using your browser's local storage — the same place your jobs and CV are stored. They exist only on this device and are never sent to GitHub or any third party.</div>
+        </div>
       </section>
 
       <!-- ADD JOB -->
