@@ -144,7 +144,122 @@ document.querySelectorAll('.nav-item').forEach(btn => {
   });
 });
 
-// ── CV ───────────────────────────────────────────────────────
+// ── CV Upload (.docx) ────────────────────────────────────────
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('cv-upload-zone').classList.add('drag-over');
+}
+function handleDragLeave(e) {
+  document.getElementById('cv-upload-zone').classList.remove('drag-over');
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('cv-upload-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processDocxFile(file);
+}
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) processDocxFile(file);
+}
+
+function showUploadStatus(msg, type = 'success') {
+  const el = document.getElementById('cv-upload-status');
+  el.textContent = msg;
+  el.className = `cv-upload-status ${type}`;
+  el.classList.remove('hidden');
+  if (type === 'success') setTimeout(() => el.classList.add('hidden'), 4000);
+}
+
+async function processDocxFile(file) {
+  if (!file.name.endsWith('.docx')) {
+    showUploadStatus('Please upload a .docx (Word) file', 'error'); return;
+  }
+  showUploadStatus('Reading document…', 'loading');
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer });
+    const text = result.value.trim();
+    if (!text) { showUploadStatus('Could not extract text from this file', 'error'); return; }
+    document.getElementById('cv-input').value = text;
+    cv = text;
+    localStorage.setItem('apply_cv', cv);
+    showUploadStatus(`CV uploaded and saved from "${file.name}" ✓`);
+  } catch (err) {
+    showUploadStatus('Failed to read file — make sure it is a valid .docx', 'error');
+  }
+}
+
+// ── Fetch job from URL ───────────────────────────────────────
+function showFetchStatus(msg, type = 'loading') {
+  const el = document.getElementById('fetch-status');
+  el.textContent = msg;
+  el.className = `cv-upload-status ${type}`;
+  el.classList.remove('hidden');
+}
+function hideFetchStatus() {
+  document.getElementById('fetch-status').classList.add('hidden');
+}
+
+async function fetchJobFromUrl() {
+  const url = document.getElementById('job-fetch-url').value.trim();
+  if (!url) { showFetchStatus('Please enter a job URL', 'error'); return; }
+  const key = getAnthropicKey();
+  if (!key) { showFetchStatus('Please add your Anthropic API key in Settings first', 'error'); return; }
+
+  document.getElementById('fetch-btn').disabled = true;
+  showFetchStatus('Fetching job listing…', 'loading');
+
+  try {
+    // Use allorigins as a CORS proxy to fetch the page HTML
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const proxyResp = await fetch(proxyUrl);
+    const proxyData = await proxyResp.json();
+    const html = proxyData.contents || '';
+
+    if (!html) { showFetchStatus('Could not fetch that URL — try pasting the description manually', 'error'); return; }
+
+    // Strip HTML tags to get plain text
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    // Remove script/style elements
+    tmp.querySelectorAll('script, style, nav, header, footer').forEach(el => el.remove());
+    const pageText = (tmp.innerText || tmp.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 8000);
+
+    showFetchStatus('Extracting job details with AI…', 'loading');
+
+    const result = await callClaude(
+      `You are a job listing parser. From the following webpage text, extract the job details and return ONLY a JSON object with these exact keys:\n` +
+      `{ "title": "job title", "company": "company name", "description": "full job description text" }\n` +
+      `If you cannot find a value, use an empty string. Return only valid JSON, no markdown, no explanation.\n\n` +
+      `PAGE TEXT:\n${pageText}`
+    );
+
+    let parsed;
+    try {
+      const clean = result.replace(/```json|```/g, '').trim();
+      parsed = JSON.parse(clean);
+    } catch {
+      showFetchStatus('Could not parse job details — try pasting the description manually', 'error');
+      return;
+    }
+
+    if (parsed.title) document.getElementById('job-title').value = parsed.title;
+    if (parsed.company) document.getElementById('job-company').value = parsed.company;
+    if (parsed.description) document.getElementById('job-desc').value = parsed.description;
+    document.getElementById('job-url').value = url;
+    document.getElementById('job-fetch-url').value = '';
+
+    showFetchStatus(`Imported: "${parsed.title}" at ${parsed.company} ✓`, 'success');
+    setTimeout(hideFetchStatus, 4000);
+  } catch (err) {
+    showFetchStatus('Something went wrong — try pasting the description manually', 'error');
+  } finally {
+    document.getElementById('fetch-btn').disabled = false;
+  }
+}
+
+
 function saveCV() {
   cv = document.getElementById('cv-input').value.trim();
   localStorage.setItem('apply_cv', cv);
