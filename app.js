@@ -117,7 +117,17 @@ function showApp(user) {
   document.getElementById('app').classList.remove('hidden');
   document.getElementById('user-name').textContent = user.name;
   if (user.picture) document.getElementById('user-avatar').src = user.picture;
-  document.getElementById('cv-input').value = cv;
+
+  // Restore CV — show formatted preview if available, otherwise plain text
+  const savedHtml = localStorage.getItem('apply_cv_html');
+  if (savedHtml) {
+    document.getElementById('cv-preview').innerHTML = savedHtml;
+    document.getElementById('cv-preview-wrap').classList.remove('hidden');
+    document.getElementById('cv-text-wrap').classList.add('hidden');
+  } else {
+    document.getElementById('cv-input').value = cv;
+  }
+
   loadSettingsFields();
   renderDashboard();
   renderJobs();
@@ -170,20 +180,45 @@ async function processDocxFile(file) {
       return;
     }
     const arrayBuffer = await file.arrayBuffer();
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    const text = (result.value || '').trim();
+
+    // Extract both HTML (for preview) and plain text (for AI)
+    const [htmlResult, textResult] = await Promise.all([
+      mammoth.convertToHtml({ arrayBuffer }),
+      mammoth.extractRawText({ arrayBuffer })
+    ]);
+
+    const html = (htmlResult.value || '').trim();
+    const text = (textResult.value || '').trim();
+
     if (!text) {
       showUploadStatus('No text found in document — try pasting manually', true); return;
     }
-    document.getElementById('cv-input').value = text;
+
+    // Store plain text for AI use
     cv = text;
     localStorage.setItem('apply_cv', cv);
-    showUploadStatus(`✓ CV loaded from "${file.name}" — click Save CV to confirm`);
+    // Store HTML for preview
+    localStorage.setItem('apply_cv_html', html);
+
+    // Show formatted preview
+    document.getElementById('cv-preview').innerHTML = html;
+    document.getElementById('cv-preview-wrap').classList.remove('hidden');
+    document.getElementById('cv-text-wrap').classList.add('hidden');
+
+    showUploadStatus(`✓ CV loaded from "${file.name}"`);
   } catch (err) {
     console.error('Docx error:', err);
     showUploadStatus('Failed to read file — make sure it is a valid .docx', true);
   }
 }
+
+function switchToEdit() {
+  // Populate textarea with stored plain text and show it
+  document.getElementById('cv-input').value = cv;
+  document.getElementById('cv-preview-wrap').classList.add('hidden');
+  document.getElementById('cv-text-wrap').classList.remove('hidden');
+}
+
 
 // ── Fetch job from URL ───────────────────────────────────────
 function showFetchStatus(msg, type = 'loading') {
@@ -258,9 +293,9 @@ async function fetchJobFromUrl() {
 function saveCV() {
   cv = document.getElementById('cv-input').value.trim();
   localStorage.setItem('apply_cv', cv);
-  const msg = document.getElementById('cv-save-msg');
-  msg.textContent = 'Saved ✓';
-  setTimeout(() => msg.textContent = '', 2500);
+  localStorage.removeItem('apply_cv_html');
+  const msg = document.getElementById('cv-save-msg-text') || document.getElementById('cv-save-msg');
+  if (msg) { msg.textContent = 'Saved ✓'; setTimeout(() => msg.textContent = '', 2500); }
 }
 
 // ── Add Job ──────────────────────────────────────────────────

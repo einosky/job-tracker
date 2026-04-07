@@ -102,17 +102,33 @@
           <span id="cv-upload-status" class="save-msg"></span>
         </div>
 
-        <div class="cv-divider"><span>or paste manually</span></div>
-
-        <div class="field">
-          <label>CV content</label>
-          <textarea id="cv-input" rows="18" placeholder="Paste your full CV here — work experience, education, skills, achievements..."></textarea>
+        <!-- Formatted preview (shown after upload) -->
+        <div id="cv-preview-wrap" class="cv-preview-wrap hidden">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <label style="font-size:12px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.04em;">CV preview</label>
+            <button class="btn-action btn-sm" onclick="switchToEdit()">Edit as plain text</button>
+          </div>
+          <div id="cv-preview" class="cv-preview"></div>
+          <div class="field-row" style="margin-top:1rem;">
+            <button class="btn-primary" onclick="saveCV()">Save CV</button>
+            <span id="cv-save-msg" class="save-msg"></span>
+          </div>
         </div>
-        <div class="field-row">
-          <button class="btn-primary" onclick="saveCV()">Save CV</button>
-          <span id="cv-save-msg" class="save-msg"></span>
+
+        <!-- Plain text fallback (shown by default or when editing) -->
+        <div id="cv-text-wrap">
+          <div class="cv-divider"><span>or paste manually</span></div>
+          <div class="field">
+            <label>CV content</label>
+            <textarea id="cv-input" rows="18" placeholder="Paste your full CV here — work experience, education, skills, achievements..."></textarea>
+          </div>
+          <div class="field-row">
+            <button class="btn-primary" onclick="saveCV()">Save CV</button>
+            <span id="cv-save-msg-text" class="save-msg"></span>
+          </div>
         </div>
       </section>
+
 
       <!-- JOBS TAB -->
       <section class="tab-content" id="tab-jobs">
