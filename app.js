@@ -1,247 +1,450 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Apply — Job Application Tracker</title>
-  <link rel="manifest" href="manifest.json" />
-  <meta name="theme-color" content="#0f0f0f" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="style.css" />
-</head>
-<body>
-  <div id="auth-overlay" class="auth-overlay hidden">
-    <div class="auth-card">
-      <div class="auth-logo">Apply</div>
-      <p class="auth-sub">Your intelligent job application tracker</p>
-      <div id="auth-missing-keys" class="auth-warning hidden">
-        ⚠ Please enter your API keys in Settings before signing in.
+// ============================================================
+//  APPLY — Main App Logic
+// ============================================================
+
+// ── State ────────────────────────────────────────────────────
+let jobs = JSON.parse(localStorage.getItem('apply_jobs') || '[]');
+let cv   = localStorage.getItem('apply_cv') || '';
+let accessToken = null;
+let driveFolderId = null;
+let activeJobId = null;
+
+// ── Key helpers — read from browser storage, never from files ─
+function getAnthropicKey() { return localStorage.getItem('apply_anthropic_key') || ''; }
+function getGoogleClientId() { return localStorage.getItem('apply_google_client_id') || ''; }
+
+// ── Settings ─────────────────────────────────────────────────
+function saveSettings() {
+  const ak = document.getElementById('settings-anthropic-key').value.trim();
+  const gk = document.getElementById('settings-google-id').value.trim();
+  if (ak) localStorage.setItem('apply_anthropic_key', ak);
+  if (gk) localStorage.setItem('apply_google_client_id', gk);
+  const aMsg = document.getElementById('settings-anthropic-status');
+  const gMsg = document.getElementById('settings-google-status');
+  aMsg.textContent = ak ? 'Saved ✓' : 'No change';
+  gMsg.textContent = gk ? 'Saved ✓ — refresh to apply' : 'No change';
+  setTimeout(() => { aMsg.textContent = ''; gMsg.textContent = ''; }, 3000);
+}
+
+function loadSettingsFields() {
+  const ak = getAnthropicKey();
+  const gk = getGoogleClientId();
+  if (ak) document.getElementById('settings-anthropic-key').value = ak;
+  if (gk) document.getElementById('settings-google-id').value = gk;
+}
+
+// Pre-auth settings panel
+function showSettingsFromAuth() {
+  document.querySelector('.auth-card').classList.add('hidden');
+  document.getElementById('auth-settings-panel').classList.remove('hidden');
+  const ak = getAnthropicKey();
+  const gk = getGoogleClientId();
+  if (ak) document.getElementById('pre-anthropic-key').value = ak;
+  if (gk) document.getElementById('pre-google-id').value = gk;
+}
+
+function hideSettingsFromAuth() {
+  document.querySelector('.auth-card').classList.remove('hidden');
+  document.getElementById('auth-settings-panel').classList.add('hidden');
+}
+
+function savePreAuthSettings() {
+  const ak = document.getElementById('pre-anthropic-key').value.trim();
+  const gk = document.getElementById('pre-google-id').value.trim();
+  if (ak) localStorage.setItem('apply_anthropic_key', ak);
+  if (gk) localStorage.setItem('apply_google_client_id', gk);
+  const msg = document.getElementById('pre-save-msg');
+  msg.textContent = 'Saved! Refreshing…';
+  setTimeout(() => location.reload(), 1000);
+}
+
+// ── Google Identity init ─────────────────────────────────────
+function initGoogle() {
+  const clientId = getGoogleClientId();
+  if (!clientId) {
+    // No client ID yet — show auth screen with warning nudge
+    showAuth(true);
+    return;
+  }
+  const script = document.createElement('script');
+  script.src = 'https://accounts.google.com/gsi/client';
+  script.onload = () => {
+    window.tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/drive.file profile email',
+      callback: handleToken,
+    });
+    const storedUser = localStorage.getItem('apply_user');
+    if (storedUser) {
+      const user = JSON.parse(storedUser);
+      showApp(user);
+      window.tokenClient.requestAccessToken({ prompt: '' });
+    } else {
+      showAuth(false);
+    }
+  };
+  document.head.appendChild(script);
+}
+
+document.getElementById('sign-in-btn').addEventListener('click', () => {
+  window.tokenClient.requestAccessToken({ prompt: 'consent' });
+});
+
+async function handleToken(resp) {
+  if (resp.error) { console.error(resp); return; }
+  accessToken = resp.access_token;
+  // Fetch user profile
+  const profileResp = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  const profile = await profileResp.json();
+  const user = { name: profile.given_name || profile.name, picture: profile.picture, email: profile.email };
+  localStorage.setItem('apply_user', JSON.stringify(user));
+  showApp(user);
+  ensureDriveFolder();
+}
+
+function showAuth(missingKeys = false) {
+  document.getElementById('auth-overlay').classList.remove('hidden');
+  document.getElementById('app').classList.add('hidden');
+  const warn = document.getElementById('auth-missing-keys');
+  if (missingKeys) warn.classList.remove('hidden');
+  else warn.classList.add('hidden');
+}
+
+function showApp(user) {
+  document.getElementById('auth-overlay').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('user-name').textContent = user.name;
+  if (user.picture) document.getElementById('user-avatar').src = user.picture;
+  document.getElementById('cv-input').value = cv;
+  loadSettingsFields();
+  renderDashboard();
+  renderJobs();
+}
+
+document.getElementById('sign-out-btn').addEventListener('click', () => {
+  localStorage.removeItem('apply_user');
+  accessToken = null;
+  driveFolderId = null;
+  showAuth();
+});
+
+// ── Tab navigation ───────────────────────────────────────────
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
+    if (tab === 'dashboard') renderDashboard();
+    if (tab === 'jobs') renderJobs();
+    if (tab === 'settings') loadSettingsFields();
+  });
+});
+
+// ── CV ───────────────────────────────────────────────────────
+function saveCV() {
+  cv = document.getElementById('cv-input').value.trim();
+  localStorage.setItem('apply_cv', cv);
+  const msg = document.getElementById('cv-save-msg');
+  msg.textContent = 'Saved ✓';
+  setTimeout(() => msg.textContent = '', 2500);
+}
+
+// ── Add Job ──────────────────────────────────────────────────
+function addJob() {
+  const title   = document.getElementById('job-title').value.trim();
+  const company = document.getElementById('job-company').value.trim();
+  const desc    = document.getElementById('job-desc').value.trim();
+  const status  = document.getElementById('job-status').value;
+  const url     = document.getElementById('job-url').value.trim();
+  if (!title || !company || !desc) {
+    alert('Please fill in job title, company, and job description.');
+    return;
+  }
+  const job = {
+    id: Date.now(), title, company, desc, status, url,
+    added: new Date().toLocaleDateString('en-NZ', { day:'numeric', month:'short', year:'numeric' }),
+    tailoredCV: '', coverLetter: '', driveCV: '', driveCL: ''
+  };
+  jobs.unshift(job);
+  persistJobs();
+  // Clear form
+  ['job-title','job-company','job-desc','job-url'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('job-status').value = 'saved';
+  // Switch to Applications tab
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelector('[data-tab="jobs"]').classList.add('active');
+  document.getElementById('tab-jobs').classList.add('active');
+  renderJobs();
+}
+
+// ── Persist ──────────────────────────────────────────────────
+function persistJobs() {
+  localStorage.setItem('apply_jobs', JSON.stringify(jobs));
+}
+
+// ── Dashboard ────────────────────────────────────────────────
+function renderDashboard() {
+  const counts = { saved:0, applied:0, interview:0, offer:0, rejected:0 };
+  jobs.forEach(j => counts[j.status]++);
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card"><div class="stat-num">${jobs.length}</div><div class="stat-label">Total</div></div>
+    <div class="stat-card"><div class="stat-num" style="color:var(--blue)">${counts.applied}</div><div class="stat-label">Applied</div></div>
+    <div class="stat-card"><div class="stat-num accent">${counts.interview}</div><div class="stat-label">Interview</div></div>
+    <div class="stat-card"><div class="stat-num green">${counts.offer}</div><div class="stat-label">Offer</div></div>
+    <div class="stat-card"><div class="stat-num red">${counts.rejected}</div><div class="stat-label">Rejected</div></div>
+  `;
+  const recent = jobs.slice(0, 5);
+  document.getElementById('recent-jobs').innerHTML = recent.length
+    ? recent.map(jobCardHTML).join('')
+    : '<div class="empty-state"><p>No applications yet — add your first job!</p></div>';
+  document.querySelectorAll('#recent-jobs .job-card').forEach(card => {
+    card.addEventListener('click', () => openModal(parseInt(card.dataset.id)));
+  });
+}
+
+// ── Job List ─────────────────────────────────────────────────
+function renderJobs() {
+  const filter = document.getElementById('status-filter')?.value || 'all';
+  const filtered = filter === 'all' ? jobs : jobs.filter(j => j.status === filter);
+  const list = document.getElementById('jobs-list');
+  if (!list) return;
+  list.innerHTML = filtered.length
+    ? filtered.map(jobCardHTML).join('')
+    : '<div class="empty-state"><p>' + (filter === 'all' ? 'No applications yet.' : `No ${filter} applications.`) + '</p></div>';
+  list.querySelectorAll('.job-card').forEach(card => {
+    card.addEventListener('click', () => openModal(parseInt(card.dataset.id)));
+  });
+}
+
+function jobCardHTML(j) {
+  const docs = [j.tailoredCV && 'CV', j.coverLetter && 'Cover letter'].filter(Boolean).join(', ');
+  return `
+    <div class="job-card" data-id="${j.id}">
+      <div class="job-card-main">
+        <div class="job-card-title">${j.title}</div>
+        <div class="job-card-sub">${j.company} · Added ${j.added}${docs ? ' · ' + docs : ''}</div>
       </div>
-      <button id="sign-in-btn" class="btn-google">
-        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
-        Sign in with Google
-      </button>
-      <p class="auth-note">Connects to your Google Drive to save tailored CVs and cover letters</p>
-      <button class="auth-settings-link" onclick="showSettingsFromAuth()">⚙ Set up API keys first</button>
-    </div>
-
-    <!-- Settings panel shown before login -->
-    <div id="auth-settings-panel" class="auth-settings-panel hidden">
-      <div class="auth-settings-inner">
-        <button class="auth-back-btn" onclick="hideSettingsFromAuth()">← Back to sign in</button>
-        <div class="auth-logo" style="margin-bottom:0.5rem;">Settings</div>
-        <p class="auth-sub">Enter your keys — stored in this browser only, never on GitHub.</p>
-        <div class="field">
-          <label>Anthropic API key</label>
-          <input type="password" id="pre-anthropic-key" placeholder="sk-ant-..." autocomplete="off" />
-        </div>
-        <div class="field">
-          <label>Google OAuth Client ID</label>
-          <input type="text" id="pre-google-id" placeholder="xxxxxxxxxx.apps.googleusercontent.com" autocomplete="off" />
-        </div>
-        <button class="btn-primary" style="width:100%;" onclick="savePreAuthSettings()">Save & continue</button>
-        <span id="pre-save-msg" class="save-msg" style="display:block;text-align:center;margin-top:8px;"></span>
+      <div class="job-card-right">
+        <span class="badge badge-${j.status}">${j.status.charAt(0).toUpperCase()+j.status.slice(1)}</span>
       </div>
-    </div>
-  </div>
+    </div>`;
+}
 
-  <div id="app" class="app hidden">
-    <aside class="sidebar">
-      <div class="sidebar-brand">Apply</div>
-      <nav class="sidebar-nav">
-        <button class="nav-item active" data-tab="dashboard">
-          <span class="nav-icon">◈</span> Dashboard
-        </button>
-        <button class="nav-item" data-tab="cv">
-          <span class="nav-icon">◉</span> My CV
-        </button>
-        <button class="nav-item" data-tab="jobs">
-          <span class="nav-icon">◎</span> Applications
-        </button>
-        <button class="nav-item" data-tab="add">
-          <span class="nav-icon">⊕</span> Add job
-        </button>
-        <button class="nav-item" data-tab="settings">
-          <span class="nav-icon">⚙</span> Settings
-        </button>
-      </nav>
-      <div class="sidebar-footer">
-        <div class="user-info">
-          <img id="user-avatar" src="" alt="" class="user-avatar" />
-          <span id="user-name" class="user-name"></span>
-        </div>
-        <button id="sign-out-btn" class="sign-out-btn">Sign out</button>
-        <div class="drive-status" id="drive-status">
-          <span class="drive-dot"></span> Google Drive connected
-        </div>
-      </div>
-    </aside>
+// ── Modal ────────────────────────────────────────────────────
+function openModal(id) {
+  const j = jobs.find(j => j.id === id);
+  if (!j) return;
+  activeJobId = id;
+  document.getElementById('modal-title').textContent = j.title;
+  document.getElementById('modal-company').textContent = j.company;
+  document.getElementById('modal-desc').textContent = j.desc;
+  document.getElementById('modal-cv').textContent = j.tailoredCV || '';
+  document.getElementById('modal-cl').textContent = j.coverLetter || '';
+  document.getElementById('cv-placeholder').style.display = j.tailoredCV ? 'none' : 'block';
+  document.getElementById('cl-placeholder').style.display = j.coverLetter ? 'none' : 'block';
+  document.getElementById('download-cv-btn').classList.toggle('hidden', !j.tailoredCV);
+  document.getElementById('download-cl-btn').classList.toggle('hidden', !j.coverLetter);
+  const sel = document.getElementById('modal-status');
+  sel.innerHTML = ['saved','applied','interview','offer','rejected']
+    .map(s => `<option value="${s}"${j.status===s?' selected':''}>${s.charAt(0).toUpperCase()+s.slice(1)}</option>`)
+    .join('');
+  showMTab('desc', document.querySelector('.mtab'));
+  document.getElementById('modal-overlay') // reset
+  document.getElementById('job-modal').classList.remove('hidden');
+}
 
-    <main class="main">
-      <!-- DASHBOARD -->
-      <section class="tab-content active" id="tab-dashboard">
-        <h1 class="page-title">Dashboard</h1>
-        <div class="stats-grid" id="stats-grid"></div>
-        <div class="recent-header">
-          <h2 class="section-label">Recent applications</h2>
-        </div>
-        <div id="recent-jobs"></div>
-      </section>
+function closeModal() {
+  document.getElementById('job-modal').classList.add('hidden');
+  activeJobId = null;
+  document.getElementById('ai-status-bar').classList.add('hidden');
+}
 
-      <!-- CV TAB -->
-      <section class="tab-content" id="tab-cv">
-        <h1 class="page-title">My CV</h1>
-        <p class="page-desc">This base CV is used by AI to create tailored versions for each job.</p>
-        <div class="field">
-          <label>CV content</label>
-          <textarea id="cv-input" rows="22" placeholder="Paste your full CV here — work experience, education, skills, achievements..."></textarea>
-        </div>
-        <div class="field-row">
-          <button class="btn-primary" onclick="saveCV()">Save CV</button>
-          <span id="cv-save-msg" class="save-msg"></span>
-        </div>
-      </section>
+function showMTab(name, btn) {
+  document.querySelectorAll('.mtab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.mtab-content').forEach(t => t.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  else document.querySelector(`.mtab:nth-child(${name==='desc'?1:name==='cv'?2:3})`).classList.add('active');
+  document.getElementById('mtab-' + name).classList.add('active');
+}
 
-      <!-- JOBS TAB -->
-      <section class="tab-content" id="tab-jobs">
-        <div class="jobs-header">
-          <h1 class="page-title">Applications</h1>
-          <div class="filter-row">
-            <select id="status-filter" onchange="renderJobs()">
-              <option value="all">All statuses</option>
-              <option value="saved">Saved</option>
-              <option value="applied">Applied</option>
-              <option value="interview">Interview</option>
-              <option value="offer">Offer</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-        </div>
-        <div id="jobs-list"></div>
-      </section>
+function updateModalStatus() {
+  const j = jobs.find(j => j.id === activeJobId);
+  if (!j) return;
+  j.status = document.getElementById('modal-status').value;
+  persistJobs();
+  renderJobs();
+  renderDashboard();
+}
 
-      <!-- SETTINGS -->
-      <section class="tab-content" id="tab-settings">
-        <h1 class="page-title">Settings</h1>
-        <p class="page-desc">Your API keys are stored only in this browser — they are never uploaded to GitHub or anywhere else.</p>
+function modalDelete() {
+  if (!confirm('Delete this application?')) return;
+  jobs = jobs.filter(j => j.id !== activeJobId);
+  persistJobs();
+  closeModal();
+  renderJobs();
+  renderDashboard();
+}
 
-        <div class="settings-card">
-          <div class="settings-card-title">Anthropic API key</div>
-          <div class="settings-card-desc">Used to tailor your CV and generate cover letters. Get yours at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a></div>
-          <div class="field" style="margin-top:1rem;">
-            <input type="password" id="settings-anthropic-key" placeholder="sk-ant-..." autocomplete="off" />
-          </div>
-          <div class="field-row">
-            <button class="btn-primary" onclick="saveSettings()">Save key</button>
-            <span id="settings-anthropic-status" class="save-msg"></span>
-          </div>
-        </div>
+// ── AI Calls ─────────────────────────────────────────────────
+function setAIStatus(msg, isError = false) {
+  const bar = document.getElementById('ai-status-bar');
+  bar.classList.remove('hidden', 'error');
+  if (isError) bar.classList.add('error');
+  bar.innerHTML = isError
+    ? `<span>${msg}</span>`
+    : `<div class="spinner"></div><span>${msg}</span>`;
+}
 
-        <div class="settings-card">
-          <div class="settings-card-title">Google OAuth Client ID</div>
-          <div class="settings-card-desc">Used to sign in with Google and save files to your Drive. Get yours from <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a></div>
-          <div class="field" style="margin-top:1rem;">
-            <input type="text" id="settings-google-id" placeholder="xxxxxxxxxx.apps.googleusercontent.com" autocomplete="off" />
-          </div>
-          <div class="field-row">
-            <button class="btn-primary" onclick="saveSettings()">Save key</button>
-            <span id="settings-google-status" class="save-msg"></span>
-          </div>
-          <p class="settings-note">After saving your Google Client ID, refresh the page for it to take effect.</p>
-        </div>
+function clearAIStatus() {
+  document.getElementById('ai-status-bar').classList.add('hidden');
+}
 
-        <div class="settings-card settings-card-safe">
-          <div class="settings-card-title">🔒 Your keys are safe</div>
-          <div class="settings-card-desc">Keys are saved using your browser's local storage — the same place your jobs and CV are stored. They exist only on this device and are never sent to GitHub or any third party.</div>
-        </div>
-      </section>
+async function callClaude(prompt) {
+  const key = getAnthropicKey();
+  if (!key) throw new Error('No Anthropic API key — please add it in Settings.');
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  if (!resp.ok) throw new Error(`API error: ${resp.status}`);
+  const data = await resp.json();
+  return data.content?.map(c => c.text || '').join('') || '';
+}
 
-      <!-- ADD JOB -->
-      <section class="tab-content" id="tab-add">
-        <h1 class="page-title">Add job</h1>
-        <div class="form-grid">
-          <div class="field">
-            <label>Job title</label>
-            <input type="text" id="job-title" placeholder="e.g. Senior Product Manager" />
-          </div>
-          <div class="field">
-            <label>Company</label>
-            <input type="text" id="job-company" placeholder="e.g. Acme Corp" />
-          </div>
-          <div class="field">
-            <label>Status</label>
-            <select id="job-status">
-              <option value="saved">Saved</option>
-              <option value="applied">Applied</option>
-              <option value="interview">Interview</option>
-              <option value="offer">Offer</option>
-              <option value="rejected">Rejected</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Job URL (optional)</label>
-            <input type="url" id="job-url" placeholder="https://..." />
-          </div>
-        </div>
-        <div class="field">
-          <label>Job description</label>
-          <textarea id="job-desc" rows="12" placeholder="Paste the full job description — the more detail, the better the AI tailoring..."></textarea>
-        </div>
-        <div class="field-row">
-          <button class="btn-primary" onclick="addJob()">Add job</button>
-        </div>
-      </section>
-    </main>
-  </div>
+async function modalTailorCV() {
+  const j = jobs.find(j => j.id === activeJobId);
+  if (!j) return;
+  if (!cv) { alert('Please save your CV first in the "My CV" section.'); return; }
+  setAIStatus('Tailoring your CV for this role…');
+  try {
+    const result = await callClaude(
+      `You are a professional CV writer. Tailor the following CV for the job description below.\n` +
+      `Keep the same structure and truthful content, but adjust language, emphasis, and skills to match what the employer is looking for.\n` +
+      `Do not invent experience that is not in the original CV. Return only the tailored CV text with no preamble or commentary.\n\n` +
+      `--- ORIGINAL CV ---\n${cv}\n\n--- JOB: ${j.title} at ${j.company} ---\n${j.desc}`
+    );
+    j.tailoredCV = result;
+    persistJobs();
+    document.getElementById('modal-cv').textContent = result;
+    document.getElementById('cv-placeholder').style.display = 'none';
+    document.getElementById('download-cv-btn').classList.remove('hidden');
+    showMTab('cv', document.querySelectorAll('.mtab')[1]);
+    clearAIStatus();
+  } catch (e) {
+    setAIStatus('Error generating CV — check your Anthropic API key in Settings', true);
+  }
+}
 
-  <!-- Job detail modal -->
-  <div id="job-modal" class="modal-overlay hidden">
-    <div class="modal">
-      <div class="modal-header">
-        <div>
-          <div id="modal-title" class="modal-job-title"></div>
-          <div id="modal-company" class="modal-company"></div>
-        </div>
-        <button onclick="closeModal()" class="modal-close">✕</button>
-      </div>
-      <div class="modal-body">
-        <div class="modal-actions">
-          <select id="modal-status" onchange="updateModalStatus()"></select>
-          <button class="btn-action" onclick="modalTailorCV()">✦ Tailor CV</button>
-          <button class="btn-action" onclick="modalCoverLetter()">✦ Cover letter</button>
-          <button class="btn-action btn-danger" onclick="modalDelete()">Delete</button>
-        </div>
-        <div id="modal-ai-status" class="ai-status-bar hidden"></div>
-        <div class="modal-tabs">
-          <button class="mtab active" onclick="showMTab('desc', this)">Job description</button>
-          <button class="mtab" onclick="showMTab('cv', this)">Tailored CV</button>
-          <button class="mtab" onclick="showMTab('cl', this)">Cover letter</button>
-        </div>
-        <div id="mtab-desc" class="mtab-content active">
-          <pre id="modal-desc" class="content-pre"></pre>
-        </div>
-        <div id="mtab-cv" class="mtab-content">
-          <div id="cv-placeholder" class="ai-placeholder">No tailored CV yet. Click "Tailor CV" to generate one.</div>
-          <pre id="modal-cv" class="content-pre"></pre>
-          <button id="download-cv-btn" class="btn-download hidden" onclick="saveToGDrive('cv')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Save to Google Drive
-          </button>
-        </div>
-        <div id="mtab-cl" class="mtab-content">
-          <div id="cl-placeholder" class="ai-placeholder">No cover letter yet. Click "Cover letter" to generate one.</div>
-          <pre id="modal-cl" class="content-pre"></pre>
-          <button id="download-cl-btn" class="btn-download hidden" onclick="saveToGDrive('cl')">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Save to Google Drive
-          </button>
-        </div>
-      </div>
-    </div>
-  </div>
+async function modalCoverLetter() {
+  const j = jobs.find(j => j.id === activeJobId);
+  if (!j) return;
+  if (!cv) { alert('Please save your CV first in the "My CV" section.'); return; }
+  setAIStatus('Writing your cover letter…');
+  try {
+    const result = await callClaude(
+      `You are a professional cover letter writer. Write a compelling, specific cover letter for the following job application.\n` +
+      `Use the CV for background on the applicant. The letter should be 3–4 paragraphs, professional but warm in tone,\n` +
+      `and tailored specifically to the role and company. Avoid generic filler language. Include today's date and a professional sign-off.\n` +
+      `Return only the cover letter text with no preamble.\n\n` +
+      `--- CV ---\n${cv}\n\n--- JOB: ${j.title} at ${j.company} ---\n${j.desc}`
+    );
+    j.coverLetter = result;
+    persistJobs();
+    document.getElementById('modal-cl').textContent = result;
+    document.getElementById('cl-placeholder').style.display = 'none';
+    document.getElementById('download-cl-btn').classList.remove('hidden');
+    showMTab('cl', document.querySelectorAll('.mtab')[2]);
+    clearAIStatus();
+  } catch (e) {
+    setAIStatus('Error generating cover letter — check your Anthropic API key in Settings', true);
+  }
+}
 
-  <script src="config.js"></script>
-  <script src="app.js"></script>
-</body>
-</html>
+// ── Google Drive ─────────────────────────────────────────────
+async function driveRequest(url, options = {}) {
+  if (!accessToken) throw new Error('Not signed in to Google');
+  return fetch(url, {
+    ...options,
+    headers: { Authorization: `Bearer ${accessToken}`, ...(options.headers || {}) }
+  });
+}
+
+async function ensureDriveFolder() {
+  if (driveFolderId) return driveFolderId;
+  // Search for existing folder
+  const q = encodeURIComponent(`name='${CONFIG.DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const resp = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`);
+  const data = await resp.json();
+  if (data.files && data.files.length > 0) {
+    driveFolderId = data.files[0].id;
+    return driveFolderId;
+  }
+  // Create folder
+  const createResp = await driveRequest('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: CONFIG.DRIVE_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' })
+  });
+  const folder = await createResp.json();
+  driveFolderId = folder.id;
+  return driveFolderId;
+}
+
+async function saveToGDrive(type) {
+  const j = jobs.find(j => j.id === activeJobId);
+  if (!j) return;
+  const content = type === 'cv' ? j.tailoredCV : j.coverLetter;
+  const suffix  = type === 'cv' ? 'Tailored-CV' : 'Cover-Letter';
+  const slug    = `${j.company.replace(/[^a-z0-9]/gi,'-')}_${j.title.replace(/[^a-z0-9]/gi,'-')}`;
+  const filename = `${slug}_${suffix}.txt`;
+  setAIStatus('Saving to Google Drive…');
+  try {
+    const folderId = await ensureDriveFolder();
+    // Check if file already exists in folder, delete it first (overwrite)
+    const q = encodeURIComponent(`name='${filename}' and '${folderId}' in parents and trashed=false`);
+    const existing = await driveRequest(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`);
+    const exData = await existing.json();
+    if (exData.files && exData.files.length > 0) {
+      await driveRequest(`https://www.googleapis.com/drive/v3/files/${exData.files[0].id}`, { method: 'DELETE' });
+    }
+    // Upload new file
+    const meta = JSON.stringify({ name: filename, parents: [folderId] });
+    const body = new Blob([
+      '--boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n' +
+      '--boundary\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n' + content + '\r\n--boundary--'
+    ], { type: 'multipart/related; boundary=boundary' });
+    const uploadResp = await driveRequest(
+      'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+      { method: 'POST', body }
+    );
+    const file = await uploadResp.json();
+    // Store Drive link on job
+    if (type === 'cv') j.driveCV = file.webViewLink;
+    else j.driveCL = file.webViewLink;
+    persistJobs();
+    clearAIStatus();
+    setAIStatus(`Saved to Drive: "${CONFIG.DRIVE_FOLDER_NAME}/${filename}" ✓`);
+    setTimeout(clearAIStatus, 4000);
+  } catch (e) {
+    console.error(e);
+    setAIStatus('Drive save failed — check your Google Client ID in Settings', true);
+  }
+}
+
+// ── Boot ─────────────────────────────────────────────────────
+initGoogle();
