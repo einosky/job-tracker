@@ -9,25 +9,78 @@ let accessToken = null;
 let driveFolderId = null;
 let activeJobId = null;
 
+// ── Key helpers — read from browser storage, never from files ─
+function getAnthropicKey() { return localStorage.getItem('apply_anthropic_key') || ''; }
+function getGoogleClientId() { return localStorage.getItem('apply_google_client_id') || ''; }
+
+// ── Settings ─────────────────────────────────────────────────
+function saveSettings() {
+  const ak = document.getElementById('settings-anthropic-key').value.trim();
+  const gk = document.getElementById('settings-google-id').value.trim();
+  if (ak) localStorage.setItem('apply_anthropic_key', ak);
+  if (gk) localStorage.setItem('apply_google_client_id', gk);
+  const aMsg = document.getElementById('settings-anthropic-status');
+  const gMsg = document.getElementById('settings-google-status');
+  aMsg.textContent = ak ? 'Saved ✓' : 'No change';
+  gMsg.textContent = gk ? 'Saved ✓ — refresh to apply' : 'No change';
+  setTimeout(() => { aMsg.textContent = ''; gMsg.textContent = ''; }, 3000);
+}
+
+function loadSettingsFields() {
+  const ak = getAnthropicKey();
+  const gk = getGoogleClientId();
+  if (ak) document.getElementById('settings-anthropic-key').value = ak;
+  if (gk) document.getElementById('settings-google-id').value = gk;
+}
+
+// Pre-auth settings panel
+function showSettingsFromAuth() {
+  document.querySelector('.auth-card').classList.add('hidden');
+  document.getElementById('auth-settings-panel').classList.remove('hidden');
+  const ak = getAnthropicKey();
+  const gk = getGoogleClientId();
+  if (ak) document.getElementById('pre-anthropic-key').value = ak;
+  if (gk) document.getElementById('pre-google-id').value = gk;
+}
+
+function hideSettingsFromAuth() {
+  document.querySelector('.auth-card').classList.remove('hidden');
+  document.getElementById('auth-settings-panel').classList.add('hidden');
+}
+
+function savePreAuthSettings() {
+  const ak = document.getElementById('pre-anthropic-key').value.trim();
+  const gk = document.getElementById('pre-google-id').value.trim();
+  if (ak) localStorage.setItem('apply_anthropic_key', ak);
+  if (gk) localStorage.setItem('apply_google_client_id', gk);
+  const msg = document.getElementById('pre-save-msg');
+  msg.textContent = 'Saved! Refreshing…';
+  setTimeout(() => location.reload(), 1000);
+}
+
 // ── Google Identity init ─────────────────────────────────────
 function initGoogle() {
+  const clientId = getGoogleClientId();
+  if (!clientId) {
+    // No client ID yet — show auth screen with warning nudge
+    showAuth(true);
+    return;
+  }
   const script = document.createElement('script');
   script.src = 'https://accounts.google.com/gsi/client';
   script.onload = () => {
     window.tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: CONFIG.GOOGLE_CLIENT_ID,
+      client_id: clientId,
       scope: 'https://www.googleapis.com/auth/drive.file profile email',
       callback: handleToken,
     });
-    // Check if we have a stored token/user from a previous session
     const storedUser = localStorage.getItem('apply_user');
     if (storedUser) {
       const user = JSON.parse(storedUser);
       showApp(user);
-      // Request a fresh token silently (no prompt)
       window.tokenClient.requestAccessToken({ prompt: '' });
     } else {
-      showAuth();
+      showAuth(false);
     }
   };
   document.head.appendChild(script);
@@ -51,9 +104,12 @@ async function handleToken(resp) {
   ensureDriveFolder();
 }
 
-function showAuth() {
+function showAuth(missingKeys = false) {
   document.getElementById('auth-overlay').classList.remove('hidden');
   document.getElementById('app').classList.add('hidden');
+  const warn = document.getElementById('auth-missing-keys');
+  if (missingKeys) warn.classList.remove('hidden');
+  else warn.classList.add('hidden');
 }
 
 function showApp(user) {
@@ -62,6 +118,7 @@ function showApp(user) {
   document.getElementById('user-name').textContent = user.name;
   if (user.picture) document.getElementById('user-avatar').src = user.picture;
   document.getElementById('cv-input').value = cv;
+  loadSettingsFields();
   renderDashboard();
   renderJobs();
 }
@@ -83,6 +140,7 @@ document.querySelectorAll('.nav-item').forEach(btn => {
     document.getElementById('tab-' + tab).classList.add('active');
     if (tab === 'dashboard') renderDashboard();
     if (tab === 'jobs') renderJobs();
+    if (tab === 'settings') loadSettingsFields();
   });
 });
 
@@ -247,11 +305,13 @@ function clearAIStatus() {
 }
 
 async function callClaude(prompt) {
+  const key = getAnthropicKey();
+  if (!key) throw new Error('No Anthropic API key — please add it in Settings.');
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': CONFIG.ANTHROPIC_API_KEY,
+      'x-api-key': key,
       'anthropic-version': '2023-06-01',
       'anthropic-dangerous-direct-browser-access': 'true',
     },
@@ -286,7 +346,7 @@ async function modalTailorCV() {
     showMTab('cv', document.querySelectorAll('.mtab')[1]);
     clearAIStatus();
   } catch (e) {
-    setAIStatus('Error generating CV — check your API key in config.js', true);
+    setAIStatus('Error generating CV — check your Anthropic API key in Settings', true);
   }
 }
 
@@ -311,7 +371,7 @@ async function modalCoverLetter() {
     showMTab('cl', document.querySelectorAll('.mtab')[2]);
     clearAIStatus();
   } catch (e) {
-    setAIStatus('Error generating cover letter — check your API key in config.js', true);
+    setAIStatus('Error generating cover letter — check your Anthropic API key in Settings', true);
   }
 }
 
@@ -382,7 +442,7 @@ async function saveToGDrive(type) {
     setTimeout(clearAIStatus, 4000);
   } catch (e) {
     console.error(e);
-    setAIStatus('Drive save failed — check your Google OAuth setup in config.js', true);
+    setAIStatus('Drive save failed — check your Google Client ID in Settings', true);
   }
 }
 
