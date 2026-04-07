@@ -232,6 +232,34 @@ select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmln
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 3px; }
 
+/* CV UPLOAD ZONE */
+.upload-zone {
+  border: 1.5px dashed var(--border-2); border-radius: var(--radius);
+  padding: 2rem; text-align: center; cursor: pointer;
+  transition: all 0.15s; margin-bottom: 1rem; background: transparent;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent); background: var(--accent-dim);
+}
+.upload-icon { font-size: 24px; margin-bottom: 8px; color: var(--text-3); }
+.upload-label { font-size: 14px; font-weight: 500; color: var(--text-2); }
+.upload-sub { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+.cv-upload-status {
+  padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  background: var(--green-dim); border: 1px solid rgba(76,175,125,0.25); color: var(--green);
+}
+.cv-upload-status.error { background: var(--red-dim); border-color: rgba(224,92,92,0.25); color: var(--red); }
+.cv-upload-status.loading { background: var(--accent-dim); border-color: rgba(212,168,83,0.25); color: var(--accent); }
+
+/* DIVIDER */
+.cv-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 1.25rem 0; color: var(--text-3); font-size: 12px;
+}
+.cv-divider::before, .cv-divider::after {
+  content: ''; flex: 1; border-top: 1px solid var(--border);
+}
+
 /* SETTINGS CARDS */
 .settings-card {
   background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius);
