@@ -122,7 +122,9 @@ function showApp(user) {
   const savedHtml = localStorage.getItem('apply_cv_html');
   if (savedHtml) {
     document.getElementById('cv-preview').innerHTML = savedHtml;
+    document.getElementById('cv-preview-wrap').style.display = 'block';
     document.getElementById('cv-preview-wrap').classList.remove('hidden');
+    document.getElementById('cv-text-wrap').style.display = 'none';
     document.getElementById('cv-text-wrap').classList.add('hidden');
   } else {
     document.getElementById('cv-input').value = cv;
@@ -176,16 +178,17 @@ async function processDocxFile(file) {
   showUploadStatus('Reading document…');
   try {
     if (typeof mammoth === 'undefined') {
-      showUploadStatus('Library not loaded yet — please wait a moment and try again', true);
+      showUploadStatus('Library not loaded yet — please refresh and try again', true);
       return;
     }
-    const arrayBuffer = await file.arrayBuffer();
 
-    // Extract both HTML (for preview) and plain text (for AI)
-    const [htmlResult, textResult] = await Promise.all([
-      mammoth.convertToHtml({ arrayBuffer }),
-      mammoth.extractRawText({ arrayBuffer })
-    ]);
+    // Read file once, then clone the buffer for each mammoth call
+    const arrayBuffer = await file.arrayBuffer();
+    const bufferForHtml = arrayBuffer.slice(0);
+    const bufferForText = arrayBuffer.slice(0);
+
+    const htmlResult = await mammoth.convertToHtml({ arrayBuffer: bufferForHtml });
+    const textResult = await mammoth.extractRawText({ arrayBuffer: bufferForText });
 
     const html = (htmlResult.value || '').trim();
     const text = (textResult.value || '').trim();
@@ -194,16 +197,21 @@ async function processDocxFile(file) {
       showUploadStatus('No text found in document — try pasting manually', true); return;
     }
 
-    // Store plain text for AI use
+    // Store plain text for AI, HTML for preview
     cv = text;
     localStorage.setItem('apply_cv', cv);
-    // Store HTML for preview
     localStorage.setItem('apply_cv_html', html);
 
-    // Show formatted preview
-    document.getElementById('cv-preview').innerHTML = html;
-    document.getElementById('cv-preview-wrap').classList.remove('hidden');
-    document.getElementById('cv-text-wrap').classList.add('hidden');
+    // Show formatted preview, hide plain text area
+    const preview = document.getElementById('cv-preview');
+    const previewWrap = document.getElementById('cv-preview-wrap');
+    const textWrap = document.getElementById('cv-text-wrap');
+
+    preview.innerHTML = html;
+    previewWrap.style.display = 'block';
+    previewWrap.classList.remove('hidden');
+    textWrap.style.display = 'none';
+    textWrap.classList.add('hidden');
 
     showUploadStatus(`✓ CV loaded from "${file.name}"`);
   } catch (err) {
@@ -213,10 +221,13 @@ async function processDocxFile(file) {
 }
 
 function switchToEdit() {
-  // Populate textarea with stored plain text and show it
   document.getElementById('cv-input').value = cv;
-  document.getElementById('cv-preview-wrap').classList.add('hidden');
-  document.getElementById('cv-text-wrap').classList.remove('hidden');
+  const previewWrap = document.getElementById('cv-preview-wrap');
+  const textWrap = document.getElementById('cv-text-wrap');
+  previewWrap.style.display = 'none';
+  previewWrap.classList.add('hidden');
+  textWrap.style.display = 'block';
+  textWrap.classList.remove('hidden');
 }
 
 
